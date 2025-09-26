@@ -19,7 +19,7 @@ import AppLayout from '@/layouts/app-layout';
 import { dashboard } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
-import { Plus, MoreHorizontal, Users, Calendar, User } from 'lucide-react';
+import { Plus, MoreHorizontal, Users, Calendar, User, Activity } from 'lucide-react';
 import { CreateActivityModal } from '@/components/modals/create-activity-modal';
 import { ActivityTimeline } from '@/components/views/activity-timeline';
 import { ActivityCompact } from '@/components/views/activity-compact';
@@ -160,7 +160,15 @@ export default function EcosystemShow({ ecosystem }: Props) {
                             currentView={currentView}
                             onViewChange={setCurrentView}
                         />
-                        <Button onClick={() => setIsCreateActivityModalOpen(true)} className="gap-2">
+                        <Button onClick={() => {
+                            if (currentView !== 'timeline') {
+                                // In non-timeline views, open the modal
+                                setIsCreateActivityModalOpen(true);
+                            } else {
+                                // In timeline view, activate the inline form
+                                setIsCreateActivityModalOpen(true);
+                            }
+                        }} className="gap-2">
                             <Plus className="h-4 w-4" />
                             Add Activity
                         </Button>
@@ -211,7 +219,13 @@ export default function EcosystemShow({ ecosystem }: Props) {
                                         <p className="mb-4 text-muted-foreground max-w-sm">
                                             Start tracking your ecosystem changes by adding your first activity.
                                         </p>
-                                        <Button onClick={() => setIsCreateActivityModalOpen(true)} className="gap-2">
+                                        <Button onClick={() => {
+                                            if (currentView !== 'timeline') {
+                                                setIsCreateActivityModalOpen(true);
+                                            } else {
+                                                setIsCreateActivityModalOpen(true);
+                                            }
+                                        }} className="gap-2">
                                             <Plus className="h-4 w-4" />
                                             Add First Activity
                                         </Button>
@@ -290,11 +304,13 @@ export default function EcosystemShow({ ecosystem }: Props) {
                     )}
                 </div>
 
-                <CreateActivityModal
-                    isOpen={isCreateActivityModalOpen}
-                    onClose={() => setIsCreateActivityModalOpen(false)}
-                    ecosystem={ecosystem}
-                />
+                {currentView !== 'timeline' && (
+                    <CreateActivityModal
+                        isOpen={isCreateActivityModalOpen}
+                        onClose={() => setIsCreateActivityModalOpen(false)}
+                        ecosystem={ecosystem}
+                    />
+                )}
             </div>
         </AppLayout>
     );

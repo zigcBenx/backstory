@@ -25,6 +25,11 @@ interface WorkspaceSwitcherProps {
 export function WorkspaceSwitcher({ ecosystems = [], currentEcosystem }: WorkspaceSwitcherProps) {
     const [open, setOpen] = useState(false);
 
+    // Ensure current ecosystem is included in the list
+    const allEcosystems = currentEcosystem && !ecosystems.find(e => e.id === currentEcosystem.id)
+        ? [currentEcosystem, ...ecosystems]
+        : ecosystems;
+
     return (
         <DropdownMenu open={open} onOpenChange={setOpen}>
             <DropdownMenuTrigger asChild>
@@ -39,9 +44,15 @@ export function WorkspaceSwitcher({ ecosystems = [], currentEcosystem }: Workspa
                             <Activity className="size-4 text-primary activity-icon-glow" />
                         </div>
                         <div className="grid flex-1 text-left text-sm">
-                            <div className="font-bold text-foreground">BackStory</div>
+                            <div className="font-bold text-foreground">
+                                {currentEcosystem ? currentEcosystem.name : 'BackStory'}
+                            </div>
                             <div className="text-xs text-muted-foreground truncate">
-                                {currentEcosystem ? currentEcosystem.name : 'Select ecosystem...'}
+                                {currentEcosystem ? (
+                                    currentEcosystem.description || 'Current ecosystem'
+                                ) : (
+                                    'Select ecosystem...'
+                                )}
                             </div>
                         </div>
                     </div>
@@ -54,7 +65,7 @@ export function WorkspaceSwitcher({ ecosystems = [], currentEcosystem }: Workspa
                         My Ecosystems
                     </div>
                 </div>
-                {ecosystems.map((ecosystem) => {
+                {allEcosystems.map((ecosystem) => {
                     const isSelected = currentEcosystem?.id === ecosystem.id;
                     return (
                         <DropdownMenuItem key={ecosystem.id} asChild>
