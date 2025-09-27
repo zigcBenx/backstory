@@ -2,15 +2,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import DiffViewer from '@/components/ui/diff-viewer';
 import { formatDistanceToNow, format } from 'date-fns';
 import {
     Server,
     Shield,
     Database,
-    AlertTriangle,
     Settings,
-    Wrench,
-    Zap,
     GitBranch,
     User,
     Clock,
@@ -193,19 +191,15 @@ export function ActivityDetailModal({ activity, isOpen, onClose }: ActivityDetai
                             </div>
 
                             {showDiff && (
-                                <div className="grid grid-cols-2 gap-4 mt-4">
-                                    <div>
-                                        <h4 className="text-sm font-medium text-red-400 mb-2">Before</h4>
-                                        <pre className="text-xs bg-red-500/10 border border-red-500/20 rounded-lg p-3 overflow-x-auto">
-                                            <code className="text-red-300">{diff.before}</code>
-                                        </pre>
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-medium text-green-400 mb-2">After</h4>
-                                        <pre className="text-xs bg-green-500/10 border border-green-500/20 rounded-lg p-3 overflow-x-auto">
-                                            <code className="text-green-300">{diff.after}</code>
-                                        </pre>
-                                    </div>
+                                <div className="mt-4">
+                                    <DiffViewer
+                                        before={diff.before}
+                                        after={diff.after}
+                                        fileName={activity.metadata?.file_path ?
+                                            activity.metadata.file_path.split('/').pop() :
+                                            'Configuration File'
+                                        }
+                                    />
                                 </div>
                             )}
                         </Card>

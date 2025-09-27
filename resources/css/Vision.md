@@ -8,3 +8,5 @@ Vision:
 
 - integrations
     - update active status with reverb, so it immediatelly shows that is active
+
+- if integration disconnects show notification on sidebar integrations button
