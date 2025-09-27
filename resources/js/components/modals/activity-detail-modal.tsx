@@ -73,26 +73,25 @@ const getActivityColor = (color: string) => {
     return colorMap[color] || 'text-gray-400';
 };
 
-// Mock diff data for configuration events
-const getMockDiff = (activity: Activity) => {
-    if (activity.activity_type.name.toLowerCase().includes('server') ||
-        activity.activity_type.name.toLowerCase().includes('config')) {
-        return {
-            before: `server {
-  port: 8080
-  timeout: 30s
-  max_connections: 100
-  ssl_enabled: false
-}`,
-            after: `server {
-  port: 8080
-  timeout: 60s
-  max_connections: 200
-  ssl_enabled: true
-}`,
-        };
+// Get actual diff data from activity metadata
+const getActualDiff = (activity: Activity) => {
+    if (!activity.metadata?.before_content || !activity.metadata?.after_content) {
+        return null;
     }
-    return null;
+
+    try {
+        // Decode base64 content
+        const beforeContent = atob(activity.metadata.before_content);
+        const afterContent = atob(activity.metadata.after_content);
+
+        return {
+            before: beforeContent,
+            after: afterContent,
+        };
+    } catch (error) {
+        console.error('Failed to decode diff content:', error);
+        return null;
+    }
 };
 
 export function ActivityDetailModal({ activity, isOpen, onClose }: ActivityDetailModalProps) {
@@ -102,11 +101,11 @@ export function ActivityDetailModal({ activity, isOpen, onClose }: ActivityDetai
 
     const Icon = getActivityIcon(activity.activity_type.icon);
     const colorClass = getActivityColor(activity.activity_type.color);
-    const diff = getMockDiff(activity);
+    const diff = getActualDiff(activity);
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="min-w-[70vw] max-h-[90vh] overflow-y-auto">
                 <DialogHeader className="pb-4">
                     <DialogTitle className="flex items-center gap-3 text-xl">
                         <div className="p-2 rounded-lg bg-card border border-border/50 backdrop-blur-sm">
@@ -217,15 +216,20 @@ export function ActivityDetailModal({ activity, isOpen, onClose }: ActivityDetai
                         <Card className="p-4 glass-effect">
                             <h3 className="font-semibold mb-3 text-foreground">Additional Details</h3>
                             <div className="flex flex-wrap gap-2">
-                                {Object.entries(activity.metadata).map(([key, value]) => (
-                                    <Badge
-                                        key={key}
-                                        variant="secondary"
-                                        className="text-xs bg-muted/20 text-muted-foreground border-border/30"
-                                    >
-                                        {key}: {String(value)}
-                                    </Badge>
-                                ))}
+                                {Object.entries(activity.metadata)
+                                    .filter(([key]) =>
+                                        // Filter out content fields that are shown in diff view
+                                        !['before_content', 'after_content', 'file_content'].includes(key)
+                                    )
+                                    .map(([key, value]) => (
+                                        <Badge
+                                            key={key}
+                                            variant="secondary"
+                                            className="text-xs bg-muted/20 text-muted-foreground border-border/30"
+                                        >
+                                            {key}: {String(value)}
+                                        </Badge>
+                                    ))}
                             </div>
                         </Card>
                     )}

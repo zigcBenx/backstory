@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/card';
 import { home } from '@/routes';
 import { Link } from '@inertiajs/react';
+import { Activity } from 'lucide-react';
 import { type PropsWithChildren } from 'react';
 
 export default function AuthCardLayout({
@@ -26,8 +27,8 @@ export default function AuthCardLayout({
                     href={home()}
                     className="flex items-center gap-2 self-center font-medium"
                 >
-                    <div className="flex h-9 w-9 items-center justify-center">
-                        <AppLogoIcon className="size-9 fill-current text-black dark:text-white" />
+                    <div className="p-3 rounded-xl bg-primary/20 border border-primary/30 premium-glow activity-pulse">
+                        <Activity className="h-8 w-8 text-primary activity-icon-glow" />
                     </div>
                 </Link>
 

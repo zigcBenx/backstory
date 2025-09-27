@@ -11,6 +11,10 @@ Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('home');
 
+// Public script endpoint for server monitoring installation
+Route::get('install/server-monitor/{integration}', [IntegrationController::class, 'getScript'])
+    ->name('integrations.get-script');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [EcosystemController::class, 'index'])->name('dashboard');
 
@@ -40,7 +44,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('integrations.update');
     Route::delete('integrations/{integration}', [IntegrationController::class, 'destroy'])
         ->name('integrations.destroy');
+    Route::get('integrations/{integration}/download-script', [IntegrationController::class, 'downloadScript'])
+        ->name('integrations.download-script');
+    Route::get('integrations/{integration}/install-command', [IntegrationController::class, 'getInstallCommand'])
+        ->name('integrations.install-command');
 });
+
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';

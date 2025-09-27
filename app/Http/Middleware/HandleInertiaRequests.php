@@ -46,6 +46,14 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'flash' => [
+                'success' => $request->session()->get('success'),
+                'error' => $request->session()->get('error'),
+                'new_integration_id' => $request->session()->get('new_integration_id'),
+                'show_install_command' => $request->session()->get('show_install_command'),
+            ],
+            // Share all user's ecosystems globally for workspace switcher
+            'allEcosystems' => $request->user() ? $request->user()->ecosystems : [],
         ];
     }
 }

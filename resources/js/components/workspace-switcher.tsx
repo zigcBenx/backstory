@@ -7,6 +7,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useSidebar } from '@/components/ui/sidebar';
 import { Link, usePage, router } from '@inertiajs/react';
 import { ChevronsUpDown, Plus, Check } from 'lucide-react';
 import { Activity } from 'lucide-react';
@@ -24,11 +25,16 @@ interface WorkspaceSwitcherProps {
 
 export function WorkspaceSwitcher({ ecosystems = [], currentEcosystem }: WorkspaceSwitcherProps) {
     const [open, setOpen] = useState(false);
+    const { state: sidebarState } = useSidebar();
+    const { props } = usePage<any>();
+
+    // Get all ecosystems from global props or local props
+    const allEcosystemsData = props.allEcosystems || props.ecosystems || ecosystems;
 
     // Ensure current ecosystem is included in the list
-    const allEcosystems = currentEcosystem && !ecosystems.find(e => e.id === currentEcosystem.id)
-        ? [currentEcosystem, ...ecosystems]
-        : ecosystems;
+    const allEcosystems = currentEcosystem && !allEcosystemsData.find((e: Ecosystem) => e.id === currentEcosystem.id)
+        ? [currentEcosystem, ...allEcosystemsData]
+        : allEcosystemsData;
 
     return (
         <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -37,26 +43,32 @@ export function WorkspaceSwitcher({ ecosystems = [], currentEcosystem }: Workspa
                     variant="ghost"
                     role="combobox"
                     aria-expanded={open}
-                    className="w-full justify-between h-auto p-3 text-left font-normal hover:bg-accent/50"
+                    className={`w-full justify-between h-auto p-3 text-left font-normal hover:bg-accent/50 ${
+                        sidebarState === 'collapsed' ? 'px-2' : ''
+                    }`}
                 >
                     <div className="flex items-center gap-3">
                         <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary/20 border border-primary/30 premium-glow activity-pulse">
                             <Activity className="size-4 text-primary activity-icon-glow" />
                         </div>
-                        <div className="grid flex-1 text-left text-sm">
-                            <div className="font-bold text-foreground">
-                                {currentEcosystem ? currentEcosystem.name : 'BackStory'}
+                        {sidebarState !== 'collapsed' && (
+                            <div className="grid flex-1 text-left text-sm">
+                                <div className="font-bold text-foreground">
+                                    {currentEcosystem ? currentEcosystem.name : 'BackStory'}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                    {currentEcosystem ? (
+                                        currentEcosystem.description || 'Current ecosystem'
+                                    ) : (
+                                        'Select ecosystem...'
+                                    )}
+                                </div>
                             </div>
-                            <div className="text-xs text-muted-foreground truncate">
-                                {currentEcosystem ? (
-                                    currentEcosystem.description || 'Current ecosystem'
-                                ) : (
-                                    'Select ecosystem...'
-                                )}
-                            </div>
-                        </div>
+                        )}
                     </div>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    {sidebarState !== 'collapsed' && (
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    )}
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-[240px]" align="start">

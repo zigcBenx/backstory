@@ -9,6 +9,9 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -18,7 +21,7 @@ import {
 import AppLayout from '@/layouts/app-layout';
 import { dashboard } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
-import { Head, useForm, Link } from '@inertiajs/react';
+import { Head, useForm, Link, router, usePage } from '@inertiajs/react';
 import {
     Plus,
     MoreHorizontal,
@@ -32,9 +35,12 @@ import {
     Server,
     Webhook,
     Unplug,
-    Plug
+    Plug,
+    Download,
+    Copy,
+    Terminal
 } from 'lucide-react';
-import { FormEventHandler, useState } from 'react';
+import { FormEventHandler, useState, useEffect } from 'react';
 
 interface Integration {
     id: number;
@@ -45,6 +51,7 @@ interface Integration {
     category: string;
     connected: boolean;
     last_sync_at?: string;
+    activity_status: 'active' | 'inactive' | 'connected' | 'disconnected';
 }
 
 interface AvailableIntegration {
@@ -53,6 +60,9 @@ interface AvailableIntegration {
     description: string;
     icon: string;
     category: string;
+    isActive?: boolean;
+    configurable?: boolean;
+    availableTypes?: Record<string, any>;
 }
 
 interface Ecosystem {
@@ -65,6 +75,11 @@ interface Ecosystem {
 interface Props {
     ecosystem: Ecosystem;
     availableIntegrations: AvailableIntegration[];
+    flash?: {
+        success?: string;
+        new_integration_id?: number;
+        show_install_command?: boolean;
+    };
 }
 
 const breadcrumbs = (ecosystem: Ecosystem): BreadcrumbItem[] => [
@@ -82,25 +97,105 @@ const breadcrumbs = (ecosystem: Ecosystem): BreadcrumbItem[] => [
     },
 ];
 
-export default function ManageIntegrations({ ecosystem, availableIntegrations }: Props) {
+export default function ManageIntegrations({ ecosystem, availableIntegrations, flash }: Props) {
+    const { props } = usePage<any>();
+    const flashData = props.flash || flash;
+
     const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
     const [selectedIntegration, setSelectedIntegration] = useState<AvailableIntegration | null>(null);
+    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+    const [selectedMonitoringTypes, setSelectedMonitoringTypes] = useState<string[]>([]);
+    const [customPaths, setCustomPaths] = useState<Record<string, string>>({});
+    const [showInstallCommand, setShowInstallCommand] = useState<number | null>(null);
+    const [installCommand, setInstallCommand] = useState<string>('');
 
     const { post, put, delete: destroy, processing } = useForm();
+    const { post: postForm } = useForm();
+
+    // Auto-show install command if integration was just created
+    useEffect(() => {
+        // Try both sources of flash data
+        const flash = props.flash || flashData;
+
+        if (flash?.show_install_command && flash?.new_integration_id) {
+            const newIntegration = ecosystem.integrations.find(i => i.id === flash.new_integration_id);
+
+            if (newIntegration && newIntegration.type === 'server-monitor') {
+                // Small delay to ensure the page is fully loaded
+                setTimeout(() => {
+                    handleShowInstallCommand(newIntegration);
+                }, 300);
+            }
+        }
+    }, [flashData, ecosystem.integrations, props]);
 
     const handleConnect = (integration: AvailableIntegration) => {
-        post(`/ecosystems/${ecosystem.id}/integrations`, {
-            type: integration.type,
-            name: integration.name,
-            description: integration.description,
-            icon: integration.icon,
-            category: integration.category,
-        }, {
-            onSuccess: () => {
-                setIsConnectModalOpen(false);
-                setSelectedIntegration(null);
-            },
-        });
+        if (integration.configurable && integration.type === 'server-monitor') {
+            setSelectedIntegration(integration);
+            setIsConnectModalOpen(false);
+            setIsConfigModalOpen(true);
+        } else {
+            router.post(`/ecosystems/${ecosystem.id}/integrations`, {
+                type: integration.type,
+                name: integration.name,
+                description: integration.description,
+                icon: integration.icon,
+                category: integration.category,
+            }, {
+                onSuccess: () => {
+                    setIsConnectModalOpen(false);
+                    setSelectedIntegration(null);
+                    router.reload();
+                },
+            });
+        }
+    };
+
+    const handleConfigureServerMonitor = () => {
+        if (!selectedIntegration) {
+            return;
+        }
+
+        if (selectedMonitoringTypes.length === 0) {
+            return;
+        }
+
+        const configData = {
+            monitoring: selectedMonitoringTypes,
+            custom_paths: Object.entries(customPaths).reduce((acc, [key, value]) => {
+                if (value && value.trim()) {
+                    acc[key] = value.split(',').map(path => path.trim()).filter(Boolean);
+                }
+                return acc;
+            }, {} as Record<string, string[]>),
+        };
+
+        const submitData = {
+            type: selectedIntegration.type,
+            name: selectedIntegration.name,
+            description: selectedIntegration.description,
+            icon: selectedIntegration.icon,
+            category: selectedIntegration.category,
+            config: configData,
+        };
+
+        try {
+            router.post(`/ecosystems/${ecosystem.id}/integrations`, submitData, {
+                onSuccess: (data: any) => {
+                    setIsConfigModalOpen(false);
+                    setSelectedIntegration(null);
+                    setSelectedMonitoringTypes([]);
+                    setCustomPaths({});
+                    // Page will reload and auto-show install command via useEffect
+                    router.reload();
+                },
+                onError: (errors: any) => {
+                    alert('Error creating integration: ' + JSON.stringify(errors));
+                },
+            });
+        } catch (error) {
+            console.error('Exception during post:', error);
+        }
     };
 
     const handleToggleConnection = (integration: Integration) => {
@@ -113,6 +208,32 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations }:
         if (window.confirm(`Are you sure you want to remove "${integration.name}"?`)) {
             destroy(`/integrations/${integration.id}`);
         }
+    };
+
+    const handleShowInstallCommand = async (integration: Integration) => {
+        try {
+            const response = await fetch(`/integrations/${integration.id}/install-command`);
+            const data = await response.json();
+
+            if (response.ok) {
+                setInstallCommand(data.command);
+                setShowInstallCommand(integration.id);
+            } else {
+                alert('Error fetching install command: ' + data.error);
+            }
+        } catch (error) {
+            console.error('Error fetching install command:', error);
+            alert('Failed to fetch install command');
+        }
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Command copied to clipboard!');
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+            alert('Failed to copy to clipboard');
+        });
     };
 
     const openConnectModal = (integration: AvailableIntegration) => {
@@ -235,6 +356,14 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations }:
                                                             </Button>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
+                                                            {integration.type === 'server-monitor' && integration.connected && (
+                                                                <DropdownMenuItem
+                                                                    onClick={() => handleShowInstallCommand(integration)}
+                                                                >
+                                                                    <Terminal className="mr-2 h-4 w-4" />
+                                                                    Get Install Command
+                                                                </DropdownMenuItem>
+                                                            )}
                                                             <DropdownMenuItem
                                                                 onClick={() => handleToggleConnection(integration)}
                                                             >
@@ -265,24 +394,37 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations }:
                                                 <div className="flex items-center justify-between">
                                                     <Badge
                                                         className={
-                                                            integration.connected
+                                                            integration.activity_status === 'active'
                                                                 ? "bg-green-500/20 text-green-400 border-green-500/30"
+                                                                : integration.activity_status === 'connected'
+                                                                ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                                                                : integration.activity_status === 'inactive'
+                                                                ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
                                                                 : "bg-muted text-muted-foreground"
                                                         }
                                                     >
-                                                        {integration.connected ? (
+                                                        {integration.activity_status === 'active' ? (
+                                                            <>
+                                                                <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
+                                                                Active
+                                                            </>
+                                                        ) : integration.activity_status === 'connected' ? (
                                                             <>
                                                                 <Check className="h-3 w-3 mr-1" />
                                                                 Connected
+                                                            </>
+                                                        ) : integration.activity_status === 'inactive' ? (
+                                                            <>
+                                                                <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2" />
+                                                                Inactive
                                                             </>
                                                         ) : (
                                                             "Disconnected"
                                                         )}
                                                     </Badge>
-                                                    {integration.connected && integration.last_sync_at && (
+                                                    {integration.activity_status === 'active' && integration.last_sync_at && (
                                                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                                            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                                            <span>Active</span>
+                                                            <span>Last seen: {new Date(integration.last_sync_at).toLocaleTimeString()}</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -292,6 +434,64 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations }:
                                 </div>
                             </div>
                         ))}
+                    </div>
+                )}
+
+                {/* Install Command Display */}
+                {showInstallCommand && installCommand && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowInstallCommand(null)}>
+                        <div className="bg-card border border-border rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                            {/* Header - Fixed */}
+                            <div className="flex items-center justify-between p-6 pb-4 border-b border-border/50">
+                                <h3 className="text-xl font-bold text-foreground">Install BackStory Monitor</h3>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowInstallCommand(null)}
+                                >
+                                    ✕
+                                </Button>
+                            </div>
+
+                            {/* Content - Scrollable */}
+                            <div className="flex-1 overflow-y-auto p-6 pt-4">
+                                <p className="text-muted-foreground mb-4">
+                                    Run this command on your Ubuntu server to install and start the BackStory monitor:
+                                </p>
+
+                                <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm relative mb-4">
+                                    <code>{installCommand}</code>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="absolute top-2 right-2 h-8"
+                                        onClick={() => copyToClipboard(installCommand)}
+                                    >
+                                        <Copy className="h-4 w-4 mr-1" />
+                                        Copy
+                                    </Button>
+                                </div>
+
+                                <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                    <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">What this does:</h4>
+                                    <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
+                                        <li>Downloads the monitoring script with your API key embedded</li>
+                                        <li>Checks for required dependencies (inotify-tools)</li>
+                                        <li>Starts monitoring your selected configuration files</li>
+                                        <li>Reports changes to BackStory automatically</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Footer - Fixed */}
+                            <div className="p-6 pt-4 border-t border-border/50">
+                                <div className="flex justify-end">
+                                    <Button onClick={() => setShowInstallCommand(null)}>
+                                        Done
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -326,8 +526,12 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations }:
                                                 .map((integration) => (
                                                     <div
                                                         key={integration.type}
-                                                        className="glass-effect rounded-xl p-6 border border-border/50 hover:border-primary/30 transition-all duration-300 group cursor-pointer"
-                                                        onClick={() => handleConnect(integration)}
+                                                        className={`glass-effect rounded-xl p-6 border border-border/50 transition-all duration-300 group ${
+                                                            integration.isActive !== false
+                                                                ? 'hover:border-primary/30 cursor-pointer'
+                                                                : 'opacity-50 cursor-not-allowed'
+                                                        }`}
+                                                        onClick={() => integration.isActive !== false && handleConnect(integration)}
                                                     >
                                                         <div className="flex items-center justify-between">
                                                             <div className="flex items-center gap-3">
@@ -345,10 +549,21 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations }:
                                                             </div>
                                                             <Button
                                                                 size="sm"
-                                                                className="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 hover:scale-105 transition-all duration-300"
+                                                                className={`border border-primary/30 transition-all duration-300 ${
+                                                                    integration.isActive !== false
+                                                                        ? 'bg-primary/20 hover:bg-primary/30 text-primary hover:scale-105'
+                                                                        : 'bg-muted/50 text-muted-foreground cursor-not-allowed'
+                                                                }`}
+                                                                disabled={integration.isActive === false}
                                                             >
-                                                                <Plus className="h-3 w-3 mr-1" />
-                                                                Connect
+                                                                {integration.isActive !== false ? (
+                                                                    <>
+                                                                        <Plus className="h-3 w-3 mr-1" />
+                                                                        {integration.configurable ? 'Configure' : 'Connect'}
+                                                                    </>
+                                                                ) : (
+                                                                    'Coming Soon'
+                                                                )}
                                                             </Button>
                                                         </div>
                                                     </div>
@@ -367,6 +582,116 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations }:
                                 Close
                             </Button>
                         </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Server Monitor Configuration Modal */}
+                <Dialog open={isConfigModalOpen} onOpenChange={setIsConfigModalOpen}>
+                    <DialogContent className="min-w-[50vw] max-h-[90vh] flex flex-col p-0">
+                        {/* Fixed Header */}
+                        <div className="p-6 pb-4 border-b border-border/20">
+                            <DialogHeader>
+                                <DialogTitle className="text-2xl font-bold">
+                                    Configure Server Monitor
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Select which server configuration files you want to monitor for changes
+                                </DialogDescription>
+                            </DialogHeader>
+                        </div>
+
+                        {/* Scrollable Content */}
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className="text-lg font-semibold mb-4">Monitoring Options</h3>
+                                    <div className="space-y-4">
+                                        {selectedIntegration?.availableTypes && Object.entries(selectedIntegration.availableTypes).map(([key, typeInfo]: [string, any]) => (
+                                            <div key={key} className="border border-border/50 rounded-lg p-4 space-y-3">
+                                                <div className="flex items-start space-x-3">
+                                                    <Checkbox
+                                                        id={key}
+                                                        checked={selectedMonitoringTypes.includes(key)}
+                                                        onCheckedChange={(checked) => {
+                                                            if (checked) {
+                                                                setSelectedMonitoringTypes([...selectedMonitoringTypes, key]);
+                                                            } else {
+                                                                setSelectedMonitoringTypes(selectedMonitoringTypes.filter(t => t !== key));
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div className="flex-1">
+                                                        <Label htmlFor={key} className="text-base font-medium cursor-pointer">
+                                                            {typeInfo.name}
+                                                        </Label>
+                                                        <p className="text-sm text-muted-foreground mt-1">
+                                                            {typeInfo.description}
+                                                        </p>
+                                                        <div className="mt-2">
+                                                            <p className="text-xs text-muted-foreground font-medium mb-1">Default paths:</p>
+                                                            <div className="text-xs text-muted-foreground font-mono bg-muted/30 rounded p-2">
+                                                                {typeInfo.default_paths?.join('\n')}
+                                                            </div>
+                                                        </div>
+                                                        {selectedMonitoringTypes.includes(key) && (
+                                                            <div className="mt-3">
+                                                                <Label htmlFor={`custom-${key}`} className="text-sm">
+                                                                    Custom paths (optional, comma-separated):
+                                                                </Label>
+                                                                <Input
+                                                                    id={`custom-${key}`}
+                                                                    placeholder="e.g., /custom/nginx.conf, /etc/custom/apache.conf"
+                                                                    value={customPaths[key] || ''}
+                                                                    onChange={(e) => setCustomPaths({
+                                                                        ...customPaths,
+                                                                        [key]: e.target.value
+                                                                    })}
+                                                                    className="mt-1"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {selectedMonitoringTypes.length > 0 && (
+                                    <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                                        <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">What happens next?</h4>
+                                        <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-decimal list-inside">
+                                            <li>We'll generate a secure monitoring script for your server</li>
+                                            <li>The script will monitor selected files using inotify</li>
+                                            <li>Changes will be reported to BackStory automatically</li>
+                                            <li>You'll see server configuration changes as activities</li>
+                                        </ol>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Fixed Footer */}
+                        <div className="p-6 pt-4 border-t border-border/20 bg-background">
+                            <DialogFooter>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setIsConfigModalOpen(false);
+                                        setSelectedMonitoringTypes([]);
+                                        setCustomPaths({});
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleConfigureServerMonitor}
+                                    disabled={selectedMonitoringTypes.length === 0 || processing}
+                                >
+                                    {processing ? 'Creating...' : `Monitor ${selectedMonitoringTypes.length} Type${selectedMonitoringTypes.length !== 1 ? 's' : ''}`}
+                                </Button>
+                            </DialogFooter>
+                        </div>
                     </DialogContent>
                 </Dialog>
             </div>
