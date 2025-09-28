@@ -48,6 +48,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('integrations.download-script');
     Route::get('integrations/{integration}/install-command', [IntegrationController::class, 'getInstallCommand'])
         ->name('integrations.install-command');
+
+    // GitLab integration routes
+    Route::prefix('integrations/{integration}/gitlab')->group(function () {
+        Route::post('test-connection', [IntegrationController::class, 'testGitLabConnection']);
+        Route::get('repositories', [IntegrationController::class, 'getGitLabRepositories']);
+        Route::get('repositories/search', [IntegrationController::class, 'searchGitLabRepositories']);
+        Route::get('tracked-repositories', [IntegrationController::class, 'getTrackedGitLabRepositories']);
+        Route::post('repositories', [IntegrationController::class, 'addGitLabRepository']);
+        Route::delete('repositories/{repository}', [IntegrationController::class, 'removeGitLabRepository']);
+    });
 });
 
 

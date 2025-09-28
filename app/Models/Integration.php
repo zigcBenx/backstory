@@ -40,6 +40,11 @@ class Integration extends Model
         return $this->hasMany(IntegrationApiKey::class);
     }
 
+    public function gitLabRepositories(): HasMany
+    {
+        return $this->hasMany(GitLabRepository::class);
+    }
+
     public function createApiKey(string $name = null): IntegrationApiKey
     {
         return $this->apiKeys()->create([

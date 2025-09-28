@@ -38,9 +38,11 @@ import {
     Plug,
     Download,
     Copy,
-    Terminal
+    Terminal,
+    Settings
 } from 'lucide-react';
 import { FormEventHandler, useState, useEffect } from 'react';
+import GitLabConfig from '@/components/integrations/GitLabConfig';
 
 interface Integration {
     id: number;
@@ -104,6 +106,9 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
     const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
     const [selectedIntegration, setSelectedIntegration] = useState<AvailableIntegration | null>(null);
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+    const [isGitLabConfigModalOpen, setIsGitLabConfigModalOpen] = useState(false);
+    const [isGitLabEditModalOpen, setIsGitLabEditModalOpen] = useState(false);
+    const [selectedIntegrationForEdit, setSelectedIntegrationForEdit] = useState<Integration | null>(null);
     const [selectedMonitoringTypes, setSelectedMonitoringTypes] = useState<string[]>([]);
     const [customPaths, setCustomPaths] = useState<Record<string, string>>({});
     const [showInstallCommand, setShowInstallCommand] = useState<number | null>(null);
@@ -134,6 +139,10 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
             setSelectedIntegration(integration);
             setIsConnectModalOpen(false);
             setIsConfigModalOpen(true);
+        } else if (integration.type === 'gitlab') {
+            setSelectedIntegration(integration);
+            setIsConnectModalOpen(false);
+            setIsGitLabConfigModalOpen(true);
         } else {
             router.post(`/ecosystems/${ecosystem.id}/integrations`, {
                 type: integration.type,
@@ -149,6 +158,23 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                 },
             });
         }
+    };
+
+    const handleGitLabConfigSuccess = () => {
+        setIsGitLabConfigModalOpen(false);
+        setSelectedIntegration(null);
+        router.reload();
+    };
+
+    const handleEditGitLabSettings = (integration: Integration) => {
+        setSelectedIntegrationForEdit(integration);
+        setIsGitLabEditModalOpen(true);
+    };
+
+    const handleGitLabEditSuccess = () => {
+        setIsGitLabEditModalOpen(false);
+        setSelectedIntegrationForEdit(null);
+        router.reload();
     };
 
     const handleConfigureServerMonitor = () => {
@@ -362,6 +388,14 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                                                                 >
                                                                     <Terminal className="mr-2 h-4 w-4" />
                                                                     Get Install Command
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            {integration.type === 'gitlab' && integration.connected && (
+                                                                <DropdownMenuItem
+                                                                    onClick={() => handleEditGitLabSettings(integration)}
+                                                                >
+                                                                    <Settings className="mr-2 h-4 w-4" />
+                                                                    Edit Settings
                                                                 </DropdownMenuItem>
                                                             )}
                                                             <DropdownMenuItem
@@ -691,6 +725,59 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                                     {processing ? 'Creating...' : `Monitor ${selectedMonitoringTypes.length} Type${selectedMonitoringTypes.length !== 1 ? 's' : ''}`}
                                 </Button>
                             </DialogFooter>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* GitLab Configuration Modal */}
+                <Dialog open={isGitLabConfigModalOpen} onOpenChange={setIsGitLabConfigModalOpen}>
+                    <DialogContent className="min-w-[80vw] max-h-[90vh] flex flex-col p-0">
+                        <div className="p-6 pb-4 border-b border-border/20">
+                            <DialogHeader>
+                                <DialogTitle className="text-2xl font-bold">
+                                    Configure GitLab Integration
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Connect to your GitLab instance and select repositories to monitor for releases
+                                </DialogDescription>
+                            </DialogHeader>
+                        </div>
+
+                        <div className="flex-1 overflow-hidden">
+                            {selectedIntegration && (
+                                <GitLabConfig
+                                    ecosystem={ecosystem}
+                                    onSuccess={handleGitLabConfigSuccess}
+                                    onCancel={() => setIsGitLabConfigModalOpen(false)}
+                                />
+                            )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* GitLab Edit Settings Modal */}
+                <Dialog open={isGitLabEditModalOpen} onOpenChange={setIsGitLabEditModalOpen}>
+                    <DialogContent className="min-w-[80vw] max-h-[90vh] flex flex-col p-0">
+                        <div className="p-6 pb-4 border-b border-border/20">
+                            <DialogHeader>
+                                <DialogTitle className="text-2xl font-bold">
+                                    Edit GitLab Integration Settings
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Update your GitLab connection settings and manage tracked repositories
+                                </DialogDescription>
+                            </DialogHeader>
+                        </div>
+
+                        <div className="flex-1 overflow-hidden">
+                            {selectedIntegrationForEdit && (
+                                <GitLabConfig
+                                    ecosystem={ecosystem}
+                                    integration={selectedIntegrationForEdit}
+                                    onSuccess={handleGitLabEditSuccess}
+                                    onCancel={() => setIsGitLabEditModalOpen(false)}
+                                />
+                            )}
                         </div>
                     </DialogContent>
                 </Dialog>

@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Ecosystem;
 use App\Models\Integration;
+use App\Models\GitLabRepository;
 use App\Services\IntegrationService;
+use App\Services\GitLabService;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
@@ -45,6 +47,9 @@ class IntegrationController extends Controller
             'config' => 'nullable|array',
             'config.monitoring' => 'nullable|array',
             'config.custom_paths' => 'nullable|array',
+            'config.gitlab_url' => 'nullable|url',
+            'config.access_token' => 'nullable|string',
+            'config.webhook_token' => 'nullable|string',
         ]);
 
         Log::info('Validated integration data:', $validated);
@@ -61,6 +66,24 @@ class IntegrationController extends Controller
             ]);
 
             Log::info('Server monitoring integration created:', ['id' => $integration->id]);
+        } elseif ($validated['type'] === 'gitlab') {
+            Log::info('Creating GitLab integration');
+
+            $integration = $ecosystem->integrations()->create([
+                'name' => $validated['name'],
+                'type' => $validated['type'],
+                'description' => $validated['description'],
+                'icon' => $validated['icon'],
+                'category' => $validated['category'],
+                'connected' => true,
+                'config' => [
+                    'gitlab_url' => $validated['config']['gitlab_url'] ?? 'https://gitlab.com',
+                    'access_token' => $validated['config']['access_token'] ?? '',
+                    'webhook_token' => $validated['config']['webhook_token'] ?? '',
+                ],
+            ]);
+
+            Log::info('GitLab integration created:', ['id' => $integration->id]);
         } else {
             $integration = $ecosystem->integrations()->create([
                 ...$validated,
@@ -84,7 +107,10 @@ class IntegrationController extends Controller
             ]);
         }
 
-        return redirect()->back()->with('success', 'Integration created successfully!');
+        return redirect()->back()->with([
+            'success' => 'Integration created successfully!',
+            'new_integration_id' => $integration->id,
+        ]);
     }
 
     public function update(Request $request, Integration $integration)
@@ -173,6 +199,135 @@ class IntegrationController extends Controller
         ]);
     }
 
+    public function testGitLabConnection(Request $request, Integration $integration)
+    {
+        $this->authorize('update', $integration->ecosystem);
+
+        $validated = $request->validate([
+            'gitlab_url' => 'required|url',
+            'access_token' => 'required|string',
+        ]);
+
+        try {
+            $gitLabService = new GitLabService(
+                $validated['gitlab_url'],
+                $validated['access_token']
+            );
+
+            $result = $gitLabService->testConnection();
+
+            // Return as Inertia response with flash data
+            return redirect()->back()->with([
+                'gitlab_test_result' => $result,
+            ]);
+        } catch (\Exception $e) {
+            return redirect()->back()->with([
+                'gitlab_test_result' => [
+                    'success' => false,
+                    'error' => $e->getMessage(),
+                ],
+            ]);
+        }
+    }
+
+    public function searchGitLabRepositories(Request $request, Integration $integration)
+    {
+        $this->authorize('view', $integration->ecosystem);
+
+        $validated = $request->validate([
+            'query' => 'required|string|min:2',
+        ]);
+
+        try {
+            $gitLabService = GitLabService::fromIntegration($integration);
+            $repositories = $gitLabService->searchRepositories($validated['query']);
+
+            return response()->json($repositories);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getGitLabRepositories(Integration $integration)
+    {
+        $this->authorize('view', $integration->ecosystem);
+
+        try {
+            $gitLabService = GitLabService::fromIntegration($integration);
+            $repositories = $gitLabService->getUserRepositories();
+
+            return response()->json($repositories);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function addGitLabRepository(Request $request, Integration $integration)
+    {
+        $this->authorize('update', $integration->ecosystem);
+
+        $validated = $request->validate([
+            'project_id' => 'required|string',
+            'name' => 'required|string',
+            'full_name' => 'required|string',
+            'url' => 'required|url',
+            'default_branch' => 'required|string',
+            'production_branches' => 'array',
+            'staging_keywords' => 'array',
+            'track_deployments_only' => 'boolean',
+        ]);
+
+        try {
+            $repository = $integration->gitLabRepositories()->create([
+                'project_id' => $validated['project_id'],
+                'name' => $validated['name'],
+                'full_name' => $validated['full_name'],
+                'url' => $validated['url'],
+                'default_branch' => $validated['default_branch'],
+                'production_branches' => $validated['production_branches'] ?? ['main', 'master'],
+                'staging_keywords' => $validated['staging_keywords'] ?? ['beta', 'rc', 'staging'],
+                'track_deployments_only' => $validated['track_deployments_only'] ?? false,
+            ]);
+
+            return redirect()->back()->with([
+                'success' => 'Repository added successfully!',
+                'new_repository' => $repository,
+            ]);
+        } catch (\Exception $e) {
+            return redirect()->back()->withErrors([
+                'error' => 'Failed to add repository: ' . $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function removeGitLabRepository(Integration $integration, GitLabRepository $repository)
+    {
+        $this->authorize('update', $integration->ecosystem);
+
+        if ($repository->integration_id !== $integration->id) {
+            abort(404);
+        }
+
+        $repository->delete();
+
+        return response()->json(['success' => true]);
+    }
+
+    public function getTrackedGitLabRepositories(Integration $integration)
+    {
+        $this->authorize('view', $integration->ecosystem);
+
+        $repositories = $integration->gitLabRepositories()
+            ->where('active', true)
+            ->get();
+
+        return response()->json($repositories);
+    }
+
     private function getAvailableIntegrations(): array
     {
         $availableIntegrations = [
@@ -189,10 +344,11 @@ class IntegrationController extends Controller
             [
                 'type' => 'gitlab',
                 'name' => 'GitLab',
-                'description' => 'Track deployments and repository changes',
+                'description' => 'Track releases and deployments from GitLab repositories',
                 'icon' => 'git-branch',
                 'category' => 'Version Control',
-                'isActive' => false,
+                'isActive' => true,
+                'configurable' => true,
             ],
             [
                 'type' => 'github',
