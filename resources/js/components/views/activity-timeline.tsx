@@ -284,7 +284,7 @@ export function ActivityTimeline({
                                         className="flex-1 glass-effect gradient-border hover:premium-glow transition-all duration-300 group cursor-pointer"
                                         onClick={() => handleActivityClick(activity)}
                                     >
-                                        <div className="p-6">
+                                        <div className="p-4">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="flex items-center gap-3">
                                                     <h3 className="font-semibold text-lg text-foreground group-hover:text-primary transition-colors">
@@ -326,23 +326,9 @@ export function ActivityTimeline({
                                             </div>
 
                                             {activity.description && (
-                                                <p className="text-muted-foreground mb-4 text-pretty leading-relaxed">
+                                                <p className="text-muted-foreground text-pretty leading-relaxed">
                                                     {activity.description}
                                                 </p>
-                                            )}
-
-                                            {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {Object.entries(activity.metadata).map(([key, value]) => (
-                                                        <Badge
-                                                            key={key}
-                                                            variant="secondary"
-                                                            className="text-xs bg-muted/20 text-muted-foreground border-border/30"
-                                                        >
-                                                            {key}: {String(value)}
-                                                        </Badge>
-                                                    ))}
-                                                </div>
                                             )}
                                         </div>
                                     </Card>

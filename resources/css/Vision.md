@@ -13,6 +13,9 @@ Vision:
     - what should disconnect do?
     - update active status with reverb, so it immediatelly shows that is active
     - if integration disconnects show notification on sidebar integrations button
+    - server changes
+        - currently there is no safety machenism for activity endpoints
+            (some kind of token must be installed on server for accessing app's API)
 
 - custom integration
     - create custom integration (when some service send request to our endpoint)
