@@ -34,6 +34,8 @@ Vision:
     -> if regular user the user field on manual added activities should be auth
         -> if owner he can select other users
 
+-> AI assistant
+    -> AI assistant could suggest additional integration if not yet connected, to get more data.
 
 For webhook to work:
 smee -u https://smee.io/F0RTbCU8nfyYY -t http://localhost/api/gitlab/webhook

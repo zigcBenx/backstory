@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\ActivityTypeController;
+use App\Http\Controllers\AIAnalysisController;
 use App\Http\Controllers\EcosystemController;
 use App\Http\Controllers\IntegrationController;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('activities.update');
     Route::delete('activities/{activity}', [ActivityController::class, 'destroy'])
         ->name('activities.destroy');
+
+    // AI Analysis routes
+    Route::post('ecosystems/{ecosystem}/ai-analysis/incident', [AIAnalysisController::class, 'analyzeIncident'])
+        ->name('ai-analysis.incident');
 
     Route::get('ecosystems/{ecosystem}/activity-types', [ActivityTypeController::class, 'index'])
         ->name('activity-types.index');
