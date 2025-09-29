@@ -188,6 +188,7 @@
     .activity-icon-glow {
         filter: drop-shadow(0 0 8px oklch(0.7 0.15 240 / 0.6));
     }
+
 }
 
 @keyframes activity-pulse {
@@ -197,5 +198,85 @@
     }
     50% {
         box-shadow: 0 0 30px -5px oklch(0.7 0.15 240 / 0.6);
+    }
+}
+
+
+/* Premium Gradient Orb Animations */
+@keyframes float-orb-1 {
+    0%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 0.2;
+    }
+    33% {
+        transform: translate(30px, -20px) scale(1.1);
+        opacity: 0.3;
+    }
+    66% {
+        transform: translate(-20px, 15px) scale(0.9);
+        opacity: 0.15;
+    }
+}
+
+@keyframes float-orb-2 {
+    0%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 0.25;
+    }
+    25% {
+        transform: translate(-40px, 25px) scale(1.15);
+        opacity: 0.35;
+    }
+    75% {
+        transform: translate(25px, -30px) scale(0.85);
+        opacity: 0.2;
+    }
+}
+
+@keyframes float-orb-3 {
+    0%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 0.15;
+    }
+    50% {
+        transform: translate(40px, -25px) scale(1.2);
+        opacity: 0.25;
+    }
+}
+
+@keyframes float-orb-4 {
+    0%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 0.3;
+    }
+    40% {
+        transform: translate(-35px, -15px) scale(0.8);
+        opacity: 0.2;
+    }
+    80% {
+        transform: translate(20px, 30px) scale(1.1);
+        opacity: 0.4;
+    }
+}
+
+@keyframes float-orb-5 {
+    0%, 100% {
+        transform: translateX(-50%) translateY(0) scale(1);
+        opacity: 0.2;
+    }
+    30% {
+        transform: translateX(-50%) translateY(-20px) scale(1.05);
+        opacity: 0.3;
+    }
+    70% {
+        transform: translateX(-50%) translateY(15px) scale(0.95);
+        opacity: 0.15;
+    }
+}
+
+/* Accessibility: Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    [style*="float-orb"] {
+        animation: none !important;
     }
 }
