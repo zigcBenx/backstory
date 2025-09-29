@@ -17,3 +17,20 @@ Vision:
 - custom integration
     - create custom integration (when some service send request to our endpoint)
 - server integration - make it more visibe what is possible to select
+
+
+-> Dashboard
+    -> fix activity count
+    -> add settings
+        -> to edit name of the ecosystem
+        -> to invite people into the ecosystem
+
+-> Activities
+    -> if no activities, check if user has any integrations,
+        -> if not add quick link to add integrations
+    -> if regular user the user field on manual added activities should be auth
+        -> if owner he can select other users
+
+
+For webhook to work:
+smee -u https://smee.io/F0RTbCU8nfyYY -t http://localhost/api/gitlab/webhook
