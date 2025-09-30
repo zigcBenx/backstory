@@ -39,7 +39,10 @@ import {
     Download,
     Copy,
     Terminal,
-    Settings
+    Settings,
+    Eye,
+    EyeOff,
+    CheckCircle
 } from 'lucide-react';
 import { FormEventHandler, useState, useEffect } from 'react';
 import GitLabConfig from '@/components/integrations/GitLabConfig';
@@ -112,7 +115,11 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
     const [selectedMonitoringTypes, setSelectedMonitoringTypes] = useState<string[]>([]);
     const [customPaths, setCustomPaths] = useState<Record<string, string>>({});
     const [showInstallCommand, setShowInstallCommand] = useState<number | null>(null);
-    const [installCommand, setInstallCommand] = useState<string>('');
+    const [createdToken, setCreatedToken] = useState<{id: number, token: string, name: string} | null>(null);
+    const [showToken, setShowToken] = useState(false);
+    const [isCreatingToken, setIsCreatingToken] = useState(false);
+    const [copied, setCopied] = useState<'command' | 'token' | null>(null);
+    const [previewIntegration, setPreviewIntegration] = useState<Integration | null>(null);
 
     const { post, put, delete: destroy, processing } = useForm();
     const { post: postForm } = useForm();
@@ -128,7 +135,7 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
             if (newIntegration && newIntegration.type === 'server-monitor') {
                 // Small delay to ensure the page is fully loaded
                 setTimeout(() => {
-                    handleShowInstallCommand(newIntegration);
+                    setShowInstallCommand(newIntegration.id);
                 }, 300);
             }
         }
@@ -230,37 +237,63 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
         });
     };
 
-    const handleDelete = (integration: Integration) => {
+    const handleDelete = (integration: Integration, event?: React.MouseEvent) => {
+        event?.stopPropagation();
         if (window.confirm(`Are you sure you want to remove "${integration.name}"?`)) {
             destroy(`/integrations/${integration.id}`);
         }
     };
 
-    const handleShowInstallCommand = async (integration: Integration) => {
+
+    const createInstallationToken = async () => {
+        setIsCreatingToken(true);
+
         try {
-            const response = await fetch(`/integrations/${integration.id}/install-command`);
+            const response = await fetch(`/ecosystems/${ecosystem.id}/installation-tokens`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    name: `Server Monitor - ${new Date().toLocaleDateString()}`,
+                    integration_type: 'server_monitor',
+                    expires_hours: 24,
+                    paths: [],
+                    integration_id: showInstallCommand, // The integration ID from the modal
+                }),
+            });
+
             const data = await response.json();
 
-            if (response.ok) {
-                setInstallCommand(data.command);
-                setShowInstallCommand(integration.id);
+            if (response.ok && data.token) {
+                setCreatedToken(data.token);
+                setShowToken(false); // Start hidden like GitLab
             } else {
-                alert('Error fetching install command: ' + data.error);
+                alert('Error creating token: ' + (data.error || 'Unknown error'));
             }
         } catch (error) {
-            console.error('Error fetching install command:', error);
-            alert('Failed to fetch install command');
+            console.error('Error creating token:', error);
+            alert('Failed to create installation token');
+        } finally {
+            setIsCreatingToken(false);
         }
     };
 
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text).then(() => {
-            alert('Command copied to clipboard!');
-        }).catch(err => {
+    const copyToClipboard = async (text: string, type: 'command' | 'token') => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(type);
+            setTimeout(() => setCopied(null), 2000);
+        } catch (err) {
             console.error('Failed to copy text: ', err);
             alert('Failed to copy to clipboard');
-        });
+        }
     };
+
 
     const openConnectModal = (integration: AvailableIntegration) => {
         setSelectedIntegration(integration);
@@ -303,6 +336,62 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
             acc[integration.category].push(integration);
             return acc;
         }, {} as Record<string, Integration[]>);
+    };
+
+    const getConnectedServers = (integration: Integration) => {
+        if (integration.type !== 'server-monitor' || !integration.config?.connected_servers) {
+            return [];
+        }
+        return integration.config.connected_servers;
+    };
+
+    const getServerDisplayName = (integration: Integration) => {
+        // Prioritize real hostname from heartbeat data over installation-time hostname
+        const heartbeatHostname = integration.config?.last_heartbeat?.server_info?.hostname;
+        if (heartbeatHostname) {
+            return heartbeatHostname;
+        }
+
+        // Fallback to connected servers data
+        const servers = getConnectedServers(integration);
+        if (servers.length > 0) {
+            return servers[0].hostname || servers[0].token_name;
+        }
+
+        return 'Unknown Server';
+    };
+
+    const renderServerInfo = (integration: Integration) => {
+        if (integration.type !== 'server-monitor') {
+            return null;
+        }
+
+        const servers = getConnectedServers(integration);
+
+        if (servers.length === 0) {
+            return (
+                <div className="text-sm text-muted-foreground">
+                    No servers connected
+                </div>
+            );
+        }
+
+        if (servers.length === 1) {
+            return (
+                <div className="text-sm font-medium">
+                    {getServerDisplayName(integration)}
+                </div>
+            );
+        }
+
+        return (
+            <div className="text-sm">
+                <div className="font-medium">{getServerDisplayName(integration)}</div>
+                <div className="text-muted-foreground">
+                    +{servers.length - 1} more server{servers.length > 2 ? 's' : ''}
+                </div>
+            </div>
+        );
     };
 
     const connectedIntegrations = getConnectedIntegrations();
@@ -361,7 +450,7 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                                 </h2>
                                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                                     {integrations.map((integration) => (
-                                        <Card key={integration.id} className="glass-effect border-border/50 hover:border-primary/30 transition-all duration-300">
+                                        <Card key={integration.id} className="glass-effect border-border/50 hover:border-primary/30 transition-all duration-300 cursor-pointer" onClick={() => setPreviewIntegration(integration)}>
                                             <CardHeader>
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3">
@@ -377,17 +466,18 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                                                     </div>
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" className="h-8 w-8 p-0">
+                                                            <Button variant="ghost" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
                                                                 <MoreHorizontal className="h-4 w-4" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
                                                             {integration.type === 'server-monitor' && integration.connected && (
-                                                                <DropdownMenuItem
-                                                                    onClick={() => handleShowInstallCommand(integration)}
-                                                                >
+                                                                <DropdownMenuItem onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setShowInstallCommand(integration.id);
+                                                                }}>
                                                                     <Terminal className="mr-2 h-4 w-4" />
-                                                                    Get Install Command
+                                                                    Server Installation Instructions
                                                                 </DropdownMenuItem>
                                                             )}
                                                             {integration.type === 'gitlab' && integration.connected && (
@@ -414,7 +504,7 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                                                                 )}
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem
-                                                                onClick={() => handleDelete(integration)}
+                                                                onClick={(e) => handleDelete(integration, e)}
                                                                 className="text-destructive"
                                                             >
                                                                 <Trash2 className="mr-2 h-4 w-4" />
@@ -425,40 +515,49 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                                                 </div>
                                             </CardHeader>
                                             <CardContent>
-                                                <div className="flex items-center justify-between">
-                                                    <Badge
-                                                        className={
-                                                            integration.activity_status === 'active'
-                                                                ? "bg-green-500/20 text-green-400 border-green-500/30"
-                                                                : integration.activity_status === 'connected'
-                                                                ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                                                                : integration.activity_status === 'inactive'
-                                                                ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
-                                                                : "bg-muted text-muted-foreground"
-                                                        }
-                                                    >
-                                                        {integration.activity_status === 'active' ? (
-                                                            <>
-                                                                <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
-                                                                Active
-                                                            </>
-                                                        ) : integration.activity_status === 'connected' ? (
-                                                            <>
-                                                                <Check className="h-3 w-3 mr-1" />
-                                                                Connected
-                                                            </>
-                                                        ) : integration.activity_status === 'inactive' ? (
-                                                            <>
-                                                                <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2" />
-                                                                Inactive
-                                                            </>
-                                                        ) : (
-                                                            "Disconnected"
+                                                <div className="space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <Badge
+                                                            className={
+                                                                integration.activity_status === 'active'
+                                                                    ? "bg-green-500/20 text-green-400 border-green-500/30"
+                                                                    : integration.activity_status === 'connected'
+                                                                    ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                                                                    : integration.activity_status === 'inactive'
+                                                                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                                                                    : "bg-muted text-muted-foreground"
+                                                            }
+                                                        >
+                                                            {integration.activity_status === 'active' ? (
+                                                                <>
+                                                                    <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
+                                                                    Active
+                                                                </>
+                                                            ) : integration.activity_status === 'connected' ? (
+                                                                <>
+                                                                    <Check className="h-3 w-3 mr-1" />
+                                                                    Connected
+                                                                </>
+                                                            ) : integration.activity_status === 'inactive' ? (
+                                                                <>
+                                                                    <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2" />
+                                                                    Inactive
+                                                                </>
+                                                            ) : (
+                                                                "Disconnected"
+                                                            )}
+                                                        </Badge>
+                                                        {integration.activity_status === 'active' && integration.last_sync_at && (
+                                                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                                <span>Last seen: {new Date(integration.last_sync_at).toLocaleTimeString()}</span>
+                                                            </div>
                                                         )}
-                                                    </Badge>
-                                                    {integration.activity_status === 'active' && integration.last_sync_at && (
-                                                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                                            <span>Last seen: {new Date(integration.last_sync_at).toLocaleTimeString()}</span>
+                                                    </div>
+
+                                                    {/* Server information for server-monitor integrations */}
+                                                    {integration.type === 'server-monitor' && (
+                                                        <div className="pt-2 border-t border-border/50">
+                                                            {renderServerInfo(integration)}
                                                         </div>
                                                     )}
                                                 </div>
@@ -471,17 +570,30 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                     </div>
                 )}
 
-                {/* Install Command Display */}
-                {showInstallCommand && installCommand && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowInstallCommand(null)}>
-                        <div className="bg-card border border-border rounded-xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                {/* Secure Installation Instructions */}
+                {showInstallCommand && (() => {
+                    const currentIntegration = connectedIntegrations.find(i => i.id === showInstallCommand);
+                    const hasConnectedServers = currentIntegration && getConnectedServers(currentIntegration).length > 0;
+
+                    return (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => {
+                        setShowInstallCommand(null);
+                        setCreatedToken(null);
+                        setShowToken(false);
+                        setCopied(null);
+                    }}>
+                        <div className="bg-card border border-border rounded-xl max-w-3xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
                             {/* Header - Fixed */}
                             <div className="flex items-center justify-between p-6 pb-4 border-b border-border/50">
                                 <h3 className="text-xl font-bold text-foreground">Install BackStory Monitor</h3>
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setShowInstallCommand(null)}
+                                    onClick={() => {
+                                        setShowInstallCommand(null);
+                                        setCreatedToken(null);
+                                        setShowToken(false);
+                                    }}
                                 >
                                     ✕
                                 </Button>
@@ -489,45 +601,304 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
 
                             {/* Content - Scrollable */}
                             <div className="flex-1 overflow-y-auto p-6 pt-4">
-                                <p className="text-muted-foreground mb-4">
-                                    Run this command on your Ubuntu server to install and start the BackStory monitor:
-                                </p>
+                                <div className="space-y-6">
+                                    <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                        <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">🔐 Secure Installation Process</h4>
+                                        <p className="text-sm text-blue-800 dark:text-blue-200">
+                                            For security, you'll need to create an installation token first, then use it during the interactive setup.
+                                        </p>
+                                    </div>
 
-                                <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm relative mb-4">
-                                    <code>{installCommand}</code>
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="absolute top-2 right-2 h-8"
-                                        onClick={() => copyToClipboard(installCommand)}
-                                    >
-                                        <Copy className="h-4 w-4 mr-1" />
-                                        Copy
-                                    </Button>
-                                </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <h4 className="text-lg font-semibold mb-2">Step 1: Create Installation Token</h4>
+                                            <p className="text-muted-foreground mb-3">
+                                                Create a secure installation token for this server:
+                                            </p>
+                                            {!createdToken ? (
+                                                <Button
+                                                    onClick={createInstallationToken}
+                                                    disabled={isCreatingToken}
+                                                    className="w-full"
+                                                >
+                                                    <Terminal className="h-4 w-4 mr-2" />
+                                                    {isCreatingToken ? 'Creating Token...' : 'Create Installation Token'}
+                                                </Button>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    <div className="p-3 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
+                                                        <div className="flex items-center gap-2 text-green-700 dark:text-green-300 text-sm font-medium mb-2">
+                                                            <CheckCircle className="h-4 w-4" />
+                                                            Token Created Successfully!
+                                                        </div>
+                                                        <p className="text-green-600 dark:text-green-400 text-sm">
+                                                            Token: <strong>{createdToken.name}</strong>
+                                                        </p>
+                                                    </div>
 
-                                <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-                                    <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">What this does:</h4>
-                                    <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
-                                        <li>Downloads the monitoring script with your API key embedded</li>
-                                        <li>Checks for required dependencies (inotify-tools)</li>
-                                        <li>Starts monitoring your selected configuration files</li>
-                                        <li>Reports changes to BackStory automatically</li>
-                                    </ul>
+                                                    <div>
+                                                        <label className="text-sm font-medium text-muted-foreground mb-2 block">
+                                                            Your Installation Token:
+                                                        </label>
+                                                        <div className="relative">
+                                                            <textarea
+                                                                value={showToken ? createdToken.token : '••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••'}
+                                                                readOnly
+                                                                className="w-full font-mono text-sm p-3 pr-20 bg-muted border rounded resize-none"
+                                                                rows={2}
+                                                            />
+                                                            <div className="absolute right-2 top-2 flex gap-1">
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="h-6 w-6 p-0"
+                                                                    onClick={() => setShowToken(!showToken)}
+                                                                    title={showToken ? 'Hide token' : 'Show token'}
+                                                                >
+                                                                    {showToken ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                                                                </Button>
+                                                                {showToken && (
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="ghost"
+                                                                        className="h-6 w-6 p-0"
+                                                                        onClick={() => copyToClipboard(createdToken.token, 'token')}
+                                                                        title="Copy token"
+                                                                    >
+                                                                        {copied === 'token' ? <CheckCircle className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                                                    </Button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <h4 className="text-lg font-semibold mb-2">Step 2: Run Installation Command</h4>
+                                            <p className="text-muted-foreground mb-3">
+                                                Run this command on your Ubuntu server:
+                                            </p>
+                                            <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm relative">
+                                                <code>curl -sSL {window.location.origin}/install.sh | bash</code>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="absolute top-2 right-2 h-8"
+                                                    onClick={() => copyToClipboard(`curl -sSL ${window.location.origin}/install.sh | bash`, 'command')}
+                                                >
+                                                    {copied === 'command' ? <CheckCircle className="h-4 w-4 mr-1" /> : <Copy className="h-4 w-4 mr-1" />}
+                                                    Copy
+                                                </Button>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <h4 className="text-lg font-semibold mb-2">Step 3: Enter Your Token</h4>
+                                            <p className="text-muted-foreground mb-3">
+                                                {createdToken
+                                                    ? 'When the script prompts for your installation token, paste the token shown above.'
+                                                    : 'When the script prompts for your installation token, paste the token you created in Step 1.'
+                                                }
+                                            </p>
+                                        </div>
+
+                                        {hasConnectedServers && (
+                                            <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                                <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">💡 Adding Another Server</h4>
+                                                <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
+                                                    This integration already has connected servers. The new token will add another server to this integration.
+                                                </p>
+                                                <div className="text-sm text-blue-700 dark:text-blue-300">
+                                                    <strong>Currently connected:</strong> {getConnectedServers(currentIntegration).map((s: any) =>
+                                                        currentIntegration?.config?.last_heartbeat?.server_info?.hostname || s.hostname || s.token_name
+                                                    ).join(', ')}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="p-4 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg">
+                                            <h4 className="font-medium text-green-900 dark:text-green-100 mb-2">What this does:</h4>
+                                            <ul className="text-sm text-green-800 dark:text-green-200 space-y-1 list-disc list-inside">
+                                                <li>Downloads the secure installation script (no credentials embedded)</li>
+                                                <li>Prompts you to enter your installation token interactively</li>
+                                                <li>Validates the token and sets up monitoring for your configured file types</li>
+                                                <li>Creates a secure API key for this server only</li>
+                                                <li>Starts monitoring and reporting changes to BackStory</li>
+                                            </ul>
+                                        </div>
+
+                                        <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                            <h4 className="font-medium text-yellow-900 dark:text-yellow-100 mb-2">💡 Pro Tips:</h4>
+                                            <ul className="text-sm text-yellow-800 dark:text-yellow-200 space-y-1 list-disc list-inside">
+                                                <li>Installation tokens are single-use and expire automatically for security</li>
+                                                <li>You can revoke tokens anytime from the token management page</li>
+                                                <li>Each server gets its own unique API key during installation</li>
+                                                <li>View and manage all your installation tokens <Link href={`/ecosystems/${ecosystem.id}/installation-tokens`} className="underline font-medium">here</Link></li>
+                                            </ul>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
                             {/* Footer - Fixed */}
                             <div className="p-6 pt-4 border-t border-border/50">
-                                <div className="flex justify-end">
-                                    <Button onClick={() => setShowInstallCommand(null)}>
+                                <div className="flex justify-between">
+                                    <Button variant="outline" asChild>
+                                        <Link href={`/ecosystems/${ecosystem.id}/installation-tokens`}>
+                                            <Terminal className="h-4 w-4 mr-2" />
+                                            Manage Tokens
+                                        </Link>
+                                    </Button>
+                                    <Button onClick={() => {
+                                        setShowInstallCommand(null);
+                                        setCreatedToken(null);
+                                        setShowToken(false);
+                                    }}>
                                         Done
                                     </Button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                )}
+                    );
+                })()}
+
+                {/* Integration Preview Modal */}
+                <Dialog open={!!previewIntegration} onOpenChange={() => setPreviewIntegration(null)}>
+                    <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-primary/20 border border-primary/30 text-primary">
+                                    {previewIntegration && getIconComponent(previewIntegration.icon)}
+                                </div>
+                                {previewIntegration?.name}
+                            </DialogTitle>
+                            <DialogDescription>
+                                {previewIntegration?.description}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        {previewIntegration && (
+                            <div className="space-y-6">
+                                {/* Status Section */}
+                                <div className="flex items-center justify-between p-4 rounded-lg border">
+                                    <div className="flex items-center gap-3">
+                                        <Badge
+                                            className={
+                                                previewIntegration.activity_status === 'active'
+                                                    ? "bg-green-500/20 text-green-400 border-green-500/30"
+                                                    : previewIntegration.activity_status === 'connected'
+                                                    ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                                                    : previewIntegration.activity_status === 'inactive'
+                                                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                                                    : "bg-muted text-muted-foreground"
+                                            }
+                                        >
+                                            {previewIntegration.activity_status === 'active' ? (
+                                                <>
+                                                    <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
+                                                    Active
+                                                </>
+                                            ) : previewIntegration.activity_status === 'connected' ? (
+                                                <>
+                                                    <Check className="h-3 w-3 mr-1" />
+                                                    Connected
+                                                </>
+                                            ) : previewIntegration.activity_status === 'inactive' ? (
+                                                <>
+                                                    <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2" />
+                                                    Inactive
+                                                </>
+                                            ) : (
+                                                "Disconnected"
+                                            )}
+                                        </Badge>
+                                        <span className="text-sm text-muted-foreground">
+                                            {previewIntegration.category}
+                                        </span>
+                                    </div>
+                                    {previewIntegration.last_sync_at && (
+                                        <div className="text-sm text-muted-foreground">
+                                            Last sync: {new Date(previewIntegration.last_sync_at).toLocaleString()}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Server Details for server-monitor */}
+                                {previewIntegration.type === 'server-monitor' && (
+                                    <div className="space-y-4">
+                                        <h3 className="text-lg font-semibold">Connected Servers</h3>
+                                        {getConnectedServers(previewIntegration).length > 0 ? (
+                                            <div className="grid gap-3">
+                                                {getConnectedServers(previewIntegration).map((server, index) => (
+                                                    <div key={index} className="p-3 rounded-lg border bg-muted/20">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <div className="font-medium">
+                                                                    {index === 0 ? getServerDisplayName(previewIntegration) : (server.hostname || server.token_name)}
+                                                                </div>
+                                                                <div className="text-sm text-muted-foreground">
+                                                                    IP: {server.ip}
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right text-sm text-muted-foreground">
+                                                                <div>Connected</div>
+                                                                <div>{new Date(server.installed_at).toLocaleDateString()}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-8 text-muted-foreground">
+                                                <Server className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                                                <p>No servers connected yet</p>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="mt-2"
+                                                    onClick={() => {
+                                                        setPreviewIntegration(null);
+                                                        setShowInstallCommand(previewIntegration.id);
+                                                    }}
+                                                >
+                                                    Add Server
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* API Keys Section */}
+                                <div className="space-y-4">
+                                    <h3 className="text-lg font-semibold">API Keys</h3>
+                                    <div className="text-sm text-muted-foreground">
+                                        {previewIntegration.type === 'server-monitor'
+                                            ? `${getConnectedServers(previewIntegration).length} server API key(s) generated`
+                                            : 'Integration API access configured'
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setPreviewIntegration(null)}>
+                                Close
+                            </Button>
+                            {previewIntegration?.type === 'server-monitor' && (
+                                <Button onClick={() => {
+                                    setPreviewIntegration(null);
+                                    setShowInstallCommand(previewIntegration.id);
+                                }}>
+                                    Add Another Server
+                                </Button>
+                            )}
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 {/* Add Integration Modal */}
                 <Dialog open={isConnectModalOpen} onOpenChange={setIsConnectModalOpen}>
@@ -638,56 +1009,98 @@ export default function ManageIntegrations({ ecosystem, availableIntegrations, f
                         <div className="flex-1 overflow-y-auto p-6">
                             <div className="space-y-6">
                                 <div>
-                                    <h3 className="text-lg font-semibold mb-4">Monitoring Options</h3>
-                                    <div className="space-y-4">
-                                        {selectedIntegration?.availableTypes && Object.entries(selectedIntegration.availableTypes).map(([key, typeInfo]: [string, any]) => (
-                                            <div key={key} className="border border-border/50 rounded-lg p-4 space-y-3">
-                                                <div className="flex items-start space-x-3">
-                                                    <Checkbox
-                                                        id={key}
-                                                        checked={selectedMonitoringTypes.includes(key)}
-                                                        onCheckedChange={(checked) => {
-                                                            if (checked) {
-                                                                setSelectedMonitoringTypes([...selectedMonitoringTypes, key]);
-                                                            } else {
-                                                                setSelectedMonitoringTypes(selectedMonitoringTypes.filter(t => t !== key));
-                                                            }
-                                                        }}
-                                                    />
-                                                    <div className="flex-1">
-                                                        <Label htmlFor={key} className="text-base font-medium cursor-pointer">
-                                                            {typeInfo.name}
-                                                        </Label>
-                                                        <p className="text-sm text-muted-foreground mt-1">
-                                                            {typeInfo.description}
-                                                        </p>
-                                                        <div className="mt-2">
-                                                            <p className="text-xs text-muted-foreground font-medium mb-1">Default paths:</p>
-                                                            <div className="text-xs text-muted-foreground font-mono bg-muted/30 rounded p-2">
-                                                                {typeInfo.default_paths?.join('\n')}
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-semibold">Monitoring Options</h3>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                    if (selectedIntegration?.availableTypes) {
+                                                        setSelectedMonitoringTypes(Object.keys(selectedIntegration.availableTypes));
+                                                    }
+                                                }}
+                                            >
+                                                Select All
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setSelectedMonitoringTypes([])}
+                                            >
+                                                Clear
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {selectedIntegration?.availableTypes && Object.entries(selectedIntegration.availableTypes).map(([key, typeInfo]: [string, any]) => {
+                                            const isSelected = selectedMonitoringTypes.includes(key);
+                                            return (
+                                                <div
+                                                    key={key}
+                                                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                                                        isSelected
+                                                            ? 'border-primary bg-primary/5'
+                                                            : 'border-border hover:border-primary/30 hover:bg-muted/50'
+                                                    }`}
+                                                    onClick={() => {
+                                                        if (isSelected) {
+                                                            setSelectedMonitoringTypes(selectedMonitoringTypes.filter(t => t !== key));
+                                                        } else {
+                                                            setSelectedMonitoringTypes([...selectedMonitoringTypes, key]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <div className="flex items-start space-x-3">
+                                                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center mt-0.5 transition-colors ${
+                                                            isSelected
+                                                                ? 'bg-primary border-primary'
+                                                                : 'border-border'
+                                                        }`}>
+                                                            {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <div className="text-base font-medium">
+                                                                {typeInfo.name}
+                                                            </div>
+                                                            <p className="text-sm text-muted-foreground mt-1">
+                                                                {typeInfo.description}
+                                                            </p>
+                                                            <div className="mt-3">
+                                                                <p className="text-xs text-muted-foreground font-medium mb-2">Default monitored paths:</p>
+                                                                <div className="text-xs text-muted-foreground font-mono bg-muted/50 rounded p-3 leading-relaxed">
+                                                                    {typeInfo.default_paths?.join('\n')}
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                        {selectedMonitoringTypes.includes(key) && (
-                                                            <div className="mt-3">
-                                                                <Label htmlFor={`custom-${key}`} className="text-sm">
-                                                                    Custom paths (optional, comma-separated):
-                                                                </Label>
-                                                                <Input
-                                                                    id={`custom-${key}`}
-                                                                    placeholder="e.g., /custom/nginx.conf, /etc/custom/apache.conf"
-                                                                    value={customPaths[key] || ''}
-                                                                    onChange={(e) => setCustomPaths({
+                                                    </div>
+                                                    {isSelected && (
+                                                        <div className="mt-4 pt-3 border-t border-border/50">
+                                                            <Label htmlFor={`custom-${key}`} className="text-sm font-medium">
+                                                                Additional paths (optional):
+                                                            </Label>
+                                                            <Input
+                                                                id={`custom-${key}`}
+                                                                placeholder="e.g., /custom/nginx.conf, /etc/custom/apache.conf"
+                                                                value={customPaths[key] || ''}
+                                                                onChange={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setCustomPaths({
                                                                         ...customPaths,
                                                                         [key]: e.target.value
-                                                                    })}
-                                                                    className="mt-1"
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                                    });
+                                                                }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="mt-2"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground mt-1">
+                                                                Comma-separated list of additional file paths to monitor
+                                                            </p>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
 

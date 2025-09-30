@@ -29,8 +29,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import AppLayout from '@/layouts/app-layout';
 import { dashboard } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/react';
-import { Plus, MoreHorizontal, Users, Calendar, User, Activity, Sparkles, Send, Clock, AlertTriangle } from 'lucide-react';
+import { Head, router, Link } from '@inertiajs/react';
+import { Plus, MoreHorizontal, Users, Calendar, User, Activity, Sparkles, Send, Clock, AlertTriangle, Settings, Terminal } from 'lucide-react';
 import { CreateActivityModal } from '@/components/modals/create-activity-modal';
 import { ActivityTimeline } from '@/components/views/activity-timeline';
 import { ActivityCompact } from '@/components/views/activity-compact';
@@ -245,6 +245,28 @@ export default function EcosystemShow({ ecosystem }: Props) {
                             currentView={currentView}
                             onViewChange={setCurrentView}
                         />
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" className="gap-2">
+                                    <Settings className="h-4 w-4" />
+                                    Manage
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                    <Link href={`/ecosystems/${ecosystem.id}/installation-tokens`} className="flex items-center">
+                                        <Terminal className="mr-2 h-4 w-4" />
+                                        Installation Tokens
+                                    </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                    <Link href={`/ecosystems/${ecosystem.id}/integrations`} className="flex items-center">
+                                        <Activity className="mr-2 h-4 w-4" />
+                                        Integrations
+                                    </Link>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button onClick={() => {
                             if (currentView !== 'timeline') {
                                 // In non-timeline views, open the modal

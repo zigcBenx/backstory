@@ -40,6 +40,11 @@ class Ecosystem extends Model
         return $this->hasMany(Integration::class);
     }
 
+    public function installationTokens(): HasMany
+    {
+        return $this->hasMany(InstallationToken::class);
+    }
+
     protected static function boot()
     {
         parent::boot();

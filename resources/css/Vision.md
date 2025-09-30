@@ -39,3 +39,12 @@ Vision:
 
 For webhook to work:
 smee -u https://smee.io/F0RTbCU8nfyYY -t http://localhost/api/gitlab/webhook
+
+
+
+
+
+TODO: LEFT AT: 
+Working on better authentication of bash script -> interactive token now works -> not sure if it expires and then stop working script?
+
+-> Script should be like pm2, so you can run a command that list all files that are beeing watched or someting

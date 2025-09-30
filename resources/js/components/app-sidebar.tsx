@@ -16,7 +16,7 @@ import {
 import { dashboard } from '@/routes';
 import { type NavItem } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid, Settings, Link as LinkIcon, ArrowLeft } from 'lucide-react';
+import { BookOpen, Folder, LayoutGrid, Settings, Link as LinkIcon, ArrowLeft, Terminal } from 'lucide-react';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 
 const mainNavItems: NavItem[] = [
@@ -82,6 +82,14 @@ export function AppSidebar() {
                                         <Link href={`/ecosystems/${ecosystemId}/integrations`}>
                                             <LinkIcon className="h-4 w-4" />
                                             <span>Integrations</span>
+                                        </Link>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                                <SidebarMenuItem>
+                                    <SidebarMenuButton asChild>
+                                        <Link href={`/ecosystems/${ecosystemId}/installation-tokens`}>
+                                            <Terminal className="h-4 w-4" />
+                                            <span>Installation Tokens</span>
                                         </Link>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>

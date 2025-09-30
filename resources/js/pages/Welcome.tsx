@@ -145,7 +145,7 @@ export default function Welcome() {
                         <p className="mx-auto mb-12 max-w-3xl text-xl text-muted-foreground leading-relaxed">
                             Did someone push to prod? Change nginx config? Update permissions?
                             <br />
-                            <span className="text-foreground font-medium">See everything that happened before the incident in one timeline.</span>
+                            <span className="text-foreground font-medium">Instantly trace every code, config, and infra change that led to your crash — all in one timeline.</span>
                         </p>
 
                         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">

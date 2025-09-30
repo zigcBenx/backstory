@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Integration;
 use App\Models\IntegrationApiKey;
+use App\Models\InstallationToken;
 use App\Services\IntegrationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -194,5 +195,100 @@ class IntegrationWebhookController extends Controller
         }
 
         return $activityType->id;
+    }
+
+    /**
+     * Exchange installation token for integration credentials
+     */
+    public function install(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'installation_token' => 'required|string|size:64', // bsi_60chars = 4 + 60 = 64 total
+            ]);
+
+            // Find and validate the installation token
+            $installationToken = InstallationToken::where('token', $request->installation_token)
+                ->valid()
+                ->first();
+
+            if (!$installationToken) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid, expired, or already used installation token.',
+                ], 400);
+            }
+
+
+            // Get the existing integration that this token was created for
+            $integration = $installationToken->integration;
+
+            if (!$integration) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Integration not found for this installation token.',
+                ], 400);
+            }
+
+            // Add this server to the integration's connected servers
+            $connectedServers = $integration->config['connected_servers'] ?? [];
+            $serverInfo = [
+                'hostname' => gethostname(),
+                'ip' => $request->ip(),
+                'installed_at' => now()->toISOString(),
+                'token_name' => $installationToken->name,
+            ];
+
+            $connectedServers[] = $serverInfo;
+
+            // Update integration config with new server
+            $integration->update([
+                'connected' => true,
+                'config' => array_merge($integration->config ?? [], [
+                    'connected_servers' => $connectedServers,
+                    'paths' => $installationToken->metadata['paths'] ?? [],
+                ]),
+                'last_sync_at' => now(),
+            ]);
+
+            // Create API key for this server
+            $apiKey = $integration->apiKeys()->create([
+                'name' => ($installationToken->name ?? 'Server') . ' - API Key',
+                'scopes' => ['heartbeat', 'file-change'],
+            ]);
+
+            // Mark installation token as used
+            $installationToken->markAsUsed();
+
+            Log::info('Server connected to integration via token', [
+                'ecosystem_id' => $installationToken->ecosystem_id,
+                'integration_id' => $integration->id,
+                'token_id' => $installationToken->id,
+                'server_hostname' => gethostname(),
+                'ip' => $request->ip(),
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Server connected to integration successfully',
+                'api_key' => $apiKey->key,
+                'ecosystem_id' => $installationToken->ecosystem_id,
+                'integration_id' => $integration->id,
+                'paths' => $installationToken->metadata['paths'] ?? [],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Installation token exchange failed', [
+                'token' => $request->installation_token ? 'present' : 'missing',
+                'error' => $e->getMessage(),
+                'ip' => $request->ip(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Installation failed: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

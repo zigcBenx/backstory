@@ -4,7 +4,9 @@ use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\ActivityTypeController;
 use App\Http\Controllers\AIAnalysisController;
 use App\Http\Controllers\EcosystemController;
+use App\Http\Controllers\InstallationTokenController;
 use App\Http\Controllers\IntegrationController;
+use App\Http\Controllers\PublicInstallController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -12,7 +14,11 @@ Route::get('/', function () {
     return Inertia::render('Welcome');
 })->name('home');
 
-// Public script endpoint for server monitoring installation
+// Public installation script endpoint (NO AUTHENTICATION - SAFE!)
+Route::get('install.sh', [PublicInstallController::class, 'installScript'])
+    ->name('install.script');
+
+// Legacy script endpoint (will be deprecated)
 Route::get('install/server-monitor/{integration}', [IntegrationController::class, 'getScript'])
     ->name('integrations.get-script');
 
@@ -54,7 +60,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('integrations/{integration}/install-command', [IntegrationController::class, 'getInstallCommand'])
         ->name('integrations.install-command');
 
-    // GitLab integration routes
+    // Installation Token routes
+    Route::get('ecosystems/{ecosystem}/installation-tokens', [InstallationTokenController::class, 'index'])
+        ->name('ecosystems.installation-tokens.index');
+    Route::get('ecosystems/{ecosystem}/installation-tokens/create', [InstallationTokenController::class, 'create'])
+        ->name('ecosystems.installation-tokens.create');
+    Route::post('ecosystems/{ecosystem}/installation-tokens', [InstallationTokenController::class, 'store'])
+        ->name('ecosystems.installation-tokens.store');
+    Route::get('ecosystems/{ecosystem}/installation-tokens/{token}', [InstallationTokenController::class, 'show'])
+        ->name('ecosystems.installation-tokens.show');
+    Route::post('ecosystems/{ecosystem}/installation-tokens/{token}/revoke', [InstallationTokenController::class, 'revoke'])
+        ->name('ecosystems.installation-tokens.revoke');
+    Route::delete('ecosystems/{ecosystem}/installation-tokens/{token}', [InstallationTokenController::class, 'destroy'])
+        ->name('ecosystems.installation-tokens.destroy');
+
     Route::prefix('integrations/{integration}/gitlab')->group(function () {
         Route::post('test-connection', [IntegrationController::class, 'testGitLabConnection']);
         Route::get('repositories', [IntegrationController::class, 'getGitLabRepositories']);
